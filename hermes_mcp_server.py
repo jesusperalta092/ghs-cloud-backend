@@ -3102,7 +3102,17 @@ def main():
                 pass
 
             elif method == "tools/list":
-                send_response(rid, {"tools": TOOLS})
+                combined_tools = list(TOOLS)
+                if HERMES_NATIVE_AVAILABLE and _hermes_registry is not None:
+                    for name, entry in _hermes_registry._tools.items():
+                        if not any(t.get("name") == name for t in combined_tools):
+                            schema = dict(entry.schema)
+                            schema["name"] = name
+                            schema["description"] = entry.description or ""
+                            if "parameters" in schema:
+                                schema["inputSchema"] = schema.pop("parameters")
+                            combined_tools.append(schema)
+                send_response(rid, {"tools": combined_tools})
 
             elif method == "tools/call":
                 name = params.get("name")
