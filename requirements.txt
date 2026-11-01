@@ -44,3 +44,6 @@ nemo-relay>=0.8.3,<0.9; (sys_platform == 'darwin' and platform_machine == 'arm64
 anthropic
 tiktoken
 beautifulsoup4
+
+# Playwright para navegador en la nube
+playwright>=1.40.0
