@@ -91,7 +91,10 @@ if os.path.exists(MOD_DIR):
         sys.stderr.flush()
 
 # SQLite Memory Setup
-MEMORY_DB_PATH = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "ghs_memory.db")
+if os.name == 'nt':
+    MEMORY_DB_PATH = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "ghs_memory.db")
+else:
+    MEMORY_DB_PATH = os.path.join(os.path.dirname(__file__), "memory", "ghs_memory.db")
 
 # ── HABILITADOR DINAMICO DE SKILLS ──
 SKILLS_DIR = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "skills")
@@ -2112,14 +2115,39 @@ def _tool_memory(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── MEMORIA UNIFICADA 3 CAPAS (SOUL.md + USER.md + MEMORY.md) ──
     if action == "context":
-        mem_dir = os.environ.get("GHS_MEMORY_DIR", ".")
+        if os.name == 'nt':
+            mem_dir = os.environ.get("GHS_MEMORY_DIR", os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "memory"))
+        else:
+            cloud_mem = os.path.join(os.path.dirname(__file__), "memory")
+            mem_dir = os.environ.get("GHS_MEMORY_DIR", cloud_mem)
         parts = []
         for fname in ["SOUL.md", "USER.md", "MEMORY.md"]:
             p = os.path.join(mem_dir, fname)
             if os.path.exists(p):
                 try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        txt = f.read()
+                    with open(p, "rb") as f:
+                        raw_data = f.read()
+                    
+                    if raw_data.startswith(b'gAAAAA'):
+                        key_str = os.environ.get("GHS_MEM_KEY", "")
+                        key_path = os.path.join(os.path.dirname(__file__), '.memkey')
+                        
+                        key = None
+                        if key_str:
+                            key = key_str.encode('utf-8')
+                        elif os.path.exists(key_path):
+                            with open(key_path, 'rb') as kf:
+                                key = kf.read()
+                                
+                        if key:
+                            from cryptography.fernet import Fernet
+                            fernet = Fernet(key)
+                            txt = fernet.decrypt(raw_data).decode('utf-8')
+                        else:
+                            txt = "[Error: Archivo encriptado pero no se encontro GHS_MEM_KEY ni .memkey]"
+                    else:
+                        txt = raw_data.decode('utf-8')
+                    
                     parts.append(f"=== {fname} ===\n{txt}")
                 except Exception as e:
                     parts.append(f"=== {fname} ===\n[error leyendo: {e}]")

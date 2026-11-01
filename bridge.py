@@ -834,12 +834,16 @@ class MCPClient:
             # On Windows, npx/npm/yarn/pnpm/bunx are .cmd shims that Popen can't
             # launch directly (WinError 2). Run them through cmd.exe so any
             # node-based MCP server "just works" from config.json.
+            base = os.path.basename(cmd[0]).lower()
             if sys.platform == "win32":
-                base = os.path.basename(cmd[0]).lower()
                 stem = base.split(".")[0]
                 if stem in ("npx", "npm", "yarn", "pnpm", "bunx") or base.endswith((".cmd", ".bat")):
                     if cmd[0].lower() not in ("cmd.exe", "cmd"):
                         cmd = ["cmd.exe", "/c"] + cmd
+            else:
+                # En Linux/Mac, si el usuario puso npx.cmd, lo limpiamos
+                if cmd[0].endswith(".cmd"):
+                    cmd[0] = cmd[0].replace(".cmd", "")
             env = dict(os.environ)
             for k, v in self.env.items():
                 env[k] = self._resolve(v)

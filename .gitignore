@@ -7,3 +7,6 @@ _backup_*/
 *.log
 *.db
 .env
+
+# Seguridad: Llave de encriptacion de memoria
+.memkey
