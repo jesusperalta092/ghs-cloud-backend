@@ -24,6 +24,13 @@ except Exception:
     psutil = None
 from typing import Dict, Any, List, Optional
 
+import os
+# Fix para Render: buscar skills y memoria en la misma carpeta del proyecto
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ["HERMES_HOME"] = os.path.join(BASE_DIR, 'hermes-agent(mod)')
+os.environ["GHS_MEMORY_DIR"] = os.path.join(BASE_DIR, 'memory')
+
+
 # Ensure standard I/O handles are UTF-8 without buffer issues
 try:
     if hasattr(sys.stdout, "reconfigure"):
@@ -2105,7 +2112,7 @@ def _tool_memory(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── MEMORIA UNIFICADA 3 CAPAS (SOUL.md + USER.md + MEMORY.md) ──
     if action == "context":
-        mem_dir = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "memory")
+        mem_dir = os.environ.get("GHS_MEMORY_DIR", ".")
         parts = []
         for fname in ["SOUL.md", "USER.md", "MEMORY.md"]:
             p = os.path.join(mem_dir, fname)
