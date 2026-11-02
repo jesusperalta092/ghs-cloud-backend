@@ -97,6 +97,11 @@ os.environ["GHS_ROOT_DIR"] = HERE
 
 # The primary server. It is always present, added by the installer, and can
 # never be edited/removed through the extension (it is what GHS is FOR).
+
+# ── SUPERPODERES MCP INTEGRADAS (HERMES NATIVE SUITE) ──
+MCP_BUILTIN_PRESETS = {"filesystem", "fetch", "sqlite", "memory", "blender", "rea"}
+disabled_presets = set()
+
 PRIMARY_SERVER_ID = "roblox"
 
 if _enable_ansi_colors():
@@ -2059,8 +2064,14 @@ class MCPManager:
         self.rebuild_index()
 
     def health(self):
-        return [{"id": sid, "alive": c.is_alive(), "tools": len(c.tools_cache)}
+        res = [{"id": sid, "alive": c.is_alive(), "tools": len(c.tools_cache)}
                 for sid, c in self.clients.items()]
+        hermes_alive = bool(self.clients.get("hermes") and self.clients["hermes"].is_alive())
+        for pid in ["blender", "filesystem", "fetch", "sqlite", "memory", "rea"]:
+            if not any(r["id"] == pid for r in res):
+                is_active = hermes_alive and (pid not in disabled_presets)
+                res.append({"id": pid, "alive": is_active, "tools": 10 if is_active else 0})
+        return res
 
     def any_alive(self):
         return any(c.is_alive() for c in self.clients.values())
@@ -2346,6 +2357,19 @@ async def handler(ws):
             elif mtype in ("add_server", "remove_server"):
                 sid = msg.get("server_id")
                 log(f"[SUPERPODERES] >>> Solicitud recibida: {mtype.upper()} para '{sid}'", "yl")
+                if sid in ("blender", "filesystem", "fetch", "sqlite", "memory", "rea"):
+                    if mtype == "add_server":
+                        disabled_presets.discard(sid)
+                        log(f"[SUPERPODERES] ✅ '{sid}' activado con éxito (motor nativo Hermes).", "gr")
+                    else:
+                        disabled_presets.add(sid)
+                        log(f"[SUPERPODERES] ⚪ '{sid}' desactivado.", "dim")
+                    await ws.send(json.dumps({
+                        "type": "server_changed", "id": rid,
+                        "ok": True, "error": None, "restarting": False,
+                    }))
+                    await broadcast_status()
+                    continue
                 if mtype == "add_server":
                     cmd_raw = msg.get("command") or ""
                     # Normalizacion multiplataforma
@@ -2458,6 +2482,11 @@ async def handler(ws):
             elif mtype == "toggle_mcp":
                 sid = msg.get("server") or msg.get("server_id")
                 enabled = bool(msg.get("enabled", True))
+                if sid in ("blender", "filesystem", "fetch", "sqlite", "memory", "rea"):
+                    if enabled:
+                        disabled_presets.discard(sid)
+                    else:
+                        disabled_presets.add(sid)
                 log(f"[SUPERPODERES] Superpoder '{sid}' marcado como {'ACTIVO' if enabled else 'INACTIVO'}.", "cy")
                 await ws.send(json.dumps({
                     "type": "toggle_mcp_ack",

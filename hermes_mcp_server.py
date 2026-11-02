@@ -91,6 +91,39 @@ if os.path.exists(MOD_DIR):
         sys.stderr.flush()
 
 # SQLite Memory Setup
+
+# ── CIFRADO / DESCIFRADO TRANSPARENTE DE MEMORIA (Fernet AES) ──
+GHS_DEFAULT_MEM_KEY = b'zF-6ZHe9Og1bnZjvo5tl_p7Lz8szWIyUfL0A3Pe7uUU='
+
+def get_fernet_cipher():
+    key_str = os.environ.get("GHS_MEM_KEY", "").strip()
+    key_path = os.path.join(os.path.dirname(__file__), '.memkey')
+    key = None
+    if key_str:
+        key = key_str.encode('utf-8')
+    elif os.path.exists(key_path):
+        try:
+            with open(key_path, 'rb') as kf:
+                key = kf.read().strip()
+        except Exception:
+            pass
+    if not key:
+        key = GHS_DEFAULT_MEM_KEY
+    from cryptography.fernet import Fernet
+    return Fernet(key)
+
+def decrypt_if_encrypted(data_bytes: bytes) -> str:
+    if data_bytes.startswith(b'gAAAAA'):
+        try:
+            cipher = get_fernet_cipher()
+            return cipher.decrypt(data_bytes).decode('utf-8')
+        except Exception as e:
+            return f"[Error desencriptando archivo de memoria: {e}]"
+    try:
+        return data_bytes.decode('utf-8')
+    except Exception:
+        return data_bytes.decode('utf-8', errors='replace')
+
 def get_memory_dir() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
     proj_mem = os.path.join(here, "memory")
@@ -1991,16 +2024,20 @@ def _tool_file_read(arguments: Dict[str, Any]) -> Dict[str, Any]:
     limit = int(arguments.get("limit", 2000))
 
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
+        with open(path, "rb") as f:
+            raw_bytes = f.read()
+        full_text = decrypt_if_encrypted(raw_bytes)
+        lines = full_text.splitlines(keepends=True)
         
         slice_lines = lines[offset: offset + limit]
         content = "".join(slice_lines)
+        sep = chr(10) + chr(10)
+        hdr = f"Archivo: {path} (Lineas {offset + 1} a {offset + len(slice_lines)} de {len(lines)})"
         return {
             "content": [
                 {
                     "type": "text",
-                    "text": f"Archivo: {path} (Líneas {offset + 1} a {offset + len(slice_lines)} de {len(lines)})\n\n{content}"
+                    "text": hdr + sep + content
                 }
             ]
         }
@@ -2026,8 +2063,16 @@ def _tool_file_write(arguments: Dict[str, Any]) -> Dict[str, Any]:
     target_path = resolve_target_path(raw_path)
     try:
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with open(target_path, "w", encoding="utf-8", errors="replace") as f:
-            f.write(content)
+        bname = os.path.basename(target_path).upper()
+        norm_path = target_path.replace(chr(92), "/").upper()
+        if bname in ("SOUL.MD", "USER.MD", "MEMORY.MD") or "MEMORY" in norm_path:
+            cipher = get_fernet_cipher()
+            enc_bytes = cipher.encrypt(content.encode("utf-8"))
+            with open(target_path, "wb") as f:
+                f.write(enc_bytes)
+        else:
+            with open(target_path, "w", encoding="utf-8", errors="replace") as f:
+                f.write(content)
         return {"content": [{"type": "text", "text": f"Archivo guardado exitosamente: {target_path} ({len(content)} bytes)."}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": f"Error al escribir archivo en '{target_path}': {e}"}], "isError": True}
@@ -2156,7 +2201,7 @@ def _tool_memory(arguments: Dict[str, Any]) -> Dict[str, Any]:
     content = arguments.get("content", "")
     category = arguments.get("category", "general")
 
-    # ── MEMORIA UNIFICADA 3 CAPAS (SOUL.md + USER.md + MEMORY.md) ──
+                    # ── MEMORIA UNIFICADA 3 CAPAS (SOUL.md + USER.md + MEMORY.md) ──
     if action == "context":
         if os.name == 'nt':
             mem_dir = os.environ.get("GHS_MEMORY_DIR", os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "memory"))
@@ -2164,40 +2209,21 @@ def _tool_memory(arguments: Dict[str, Any]) -> Dict[str, Any]:
             cloud_mem = os.path.join(os.path.dirname(__file__), "memory")
             mem_dir = os.environ.get("GHS_MEMORY_DIR", cloud_mem)
         parts = []
+        nl = chr(10)
+        dnl = chr(10) + chr(10)
         for fname in ["SOUL.md", "USER.md", "MEMORY.md"]:
             p = os.path.join(mem_dir, fname)
             if os.path.exists(p):
                 try:
                     with open(p, "rb") as f:
                         raw_data = f.read()
-                    
-                    if raw_data.startswith(b'gAAAAA'):
-                        key_str = os.environ.get("GHS_MEM_KEY", "")
-                        key_path = os.path.join(os.path.dirname(__file__), '.memkey')
-                        
-                        key = None
-                        if key_str:
-                            key = key_str.encode('utf-8')
-                        elif os.path.exists(key_path):
-                            with open(key_path, 'rb') as kf:
-                                key = kf.read()
-                                
-                        if key:
-                            from cryptography.fernet import Fernet
-                            fernet = Fernet(key)
-                            txt = fernet.decrypt(raw_data).decode('utf-8')
-                        else:
-                            txt = "[Error: Archivo encriptado pero no se encontro GHS_MEM_KEY ni .memkey]"
-                    else:
-                        txt = raw_data.decode('utf-8')
-                    
-                    parts.append(f"=== {fname} ===\n{txt}")
+                    txt = decrypt_if_encrypted(raw_data)
+                    parts.append(f"=== {fname} ===" + nl + txt)
                 except Exception as e:
-                    parts.append(f"=== {fname} ===\n[error leyendo: {e}]")
+                    parts.append(f"=== {fname} ===" + nl + f"[error leyendo: {e}]")
             else:
-                parts.append(f"=== {fname} ===\n[no existe aún]")
-        return {"content": [{"type": "text", "text": "\n\n".join(parts)}]}
-
+                parts.append(f"=== {fname} ===" + nl + "[no existe aun]")
+        return {"content": [{"type": "text", "text": dnl.join(parts)}]}
     try:
         with sqlite3.connect(MEMORY_DB_PATH) as conn:
             cursor = conn.cursor()
