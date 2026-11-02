@@ -91,6 +91,19 @@ if os.path.exists(MOD_DIR):
         sys.stderr.flush()
 
 # SQLite Memory Setup
+def get_memory_dir() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    proj_mem = os.path.join(here, "memory")
+    if os.path.exists(proj_mem):
+        return proj_mem
+    if os.name == "nt":
+        local_app = os.environ.get("LOCALAPPDATA")
+        if local_app:
+            return os.path.join(local_app, "hermes", "memory")
+    d = os.path.join(os.path.expanduser("~"), ".hermes", "memory")
+    os.makedirs(d, exist_ok=True)
+    return d
+
 if os.name == 'nt':
     MEMORY_DB_PATH = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "ghs_memory.db")
 else:
@@ -1386,7 +1399,37 @@ def resolve_target_path(path: str) -> str:
     global GLOBAL_ACTIVE_WORKSPACE
     if not path:
         return ""
-    clean_path = os.path.normpath(path.strip())
+    raw = path.strip()
+    
+    # 1. Interceptor de Memoria 3 Capas (SOUL.md, USER.md, MEMORY.md)
+    bname = os.path.basename(raw.replace("\\", "/")).upper()
+    if bname in ("SOUL.MD", "USER.MD", "MEMORY.MD") or "HERMES/MEMORY" in raw.upper().replace("\\", "/"):
+        mdir = get_memory_dir()
+        target = os.path.join(mdir, os.path.basename(raw.replace("\\", "/")))
+        if not os.path.exists(target):
+            try:
+                os.makedirs(mdir, exist_ok=True)
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write(f"# {bname}\n\nArchivo de memoria inicializado correctamente.\n")
+            except Exception:
+                pass
+        return target
+
+    # 2. Interceptor de ghs_project_state.json y agent_workspace
+    if "GHS_PROJECT_STATE.JSON" in raw.upper():
+        ws_dir = os.path.join(get_base_workspace(), "agent_workspace")
+        os.makedirs(ws_dir, exist_ok=True)
+        return os.path.join(ws_dir, "ghs_project_state.json")
+
+    # 3. Limpieza de rutas de Windows cuando corremos en Linux / Render
+    if sys.platform != "win32" and re.match(r'^[a-zA-Z]:[\\/]', raw):
+        m = re.search(r'[\\/]Downloads[\\/](.*)', raw, re.IGNORECASE)
+        if m:
+            clean_path = os.path.join(get_base_workspace(), m.group(1).replace("\\", "/"))
+        else:
+            clean_path = os.path.basename(raw.replace("\\", "/"))
+    else:
+        clean_path = os.path.normpath(raw)
     if os.path.isabs(clean_path):
         parent_dir = os.path.dirname(clean_path)
         cur = parent_dir

@@ -2347,7 +2347,34 @@ async def handler(ws):
                 sid = msg.get("server_id")
                 log(f"[SUPERPODERES] >>> Solicitud recibida: {mtype.upper()} para '{sid}'", "yl")
                 if mtype == "add_server":
-                    cmd_raw = msg.get("command")
+                    cmd_raw = msg.get("command") or ""
+                    # Normalizacion multiplataforma
+                    if sys.platform != "win32":
+                        if cmd_raw.endswith(".cmd"):
+                            cmd_raw = cmd_raw[:-4]
+                        elif cmd_raw.endswith(".exe"):
+                            cmd_raw = cmd_raw[:-4]
+                    elif sys.platform == "win32":
+                        if cmd_raw in ("npx", "npm"):
+                            cmd_raw = cmd_raw + ".cmd" or ""
+                    # Normalización multiplataforma
+                    if sys.platform != "win32":
+                        if cmd_raw.endswith(".cmd"):
+                            cmd_raw = cmd_raw[:-4]
+                        elif cmd_raw.endswith(".exe"):
+                            cmd_raw = cmd_raw[:-4]
+                    elif sys.platform == "win32":
+                        if cmd_raw in ("npx", "npm"):
+                            cmd_raw = cmd_raw + ".cmd" or ""
+                    # Normalización multiplataforma
+                    if sys.platform != "win32":
+                        if cmd_raw.endswith(".cmd"):
+                            cmd_raw = cmd_raw[:-4]
+                        elif cmd_raw.endswith(".exe"):
+                            cmd_raw = cmd_raw[:-4]
+                    elif sys.platform == "win32":
+                        if cmd_raw in ("npx", "npm"):
+                            cmd_raw = cmd_raw + ".cmd"
                     args = msg.get("args") or []
                     env = msg.get("env")
                     log(f"[SUPERPODERES] 1/3 Guardando '{sid}' en config.json...", "dim")
