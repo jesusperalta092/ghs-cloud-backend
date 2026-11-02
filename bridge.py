@@ -2868,10 +2868,14 @@ def process_request(*args, **kwargs):
     return None
 
 async def main():
-    print(f"\n{C['cy']}  GHS Bridge v{BRIDGE_VERSION}{C['reset']}  {C['dim']}- Roblox Studio - ws://{HOST}:{PORT}{C['reset']}\n")
+    print(f"\n{C['cy']}  GHS Bridge v{BRIDGE_VERSION}{C['reset']}  {C['dim']}- Agente Autónomo - ws://{HOST}:{PORT}{C['reset']}\n")
     log(f"===== BRIDGE START  v{BRIDGE_VERSION}  pid={os.getpid()}  log={LOG_PATH} =====", "cy")
-    await asyncio.to_thread(_kill_orphan_studio_mcp)
-    killed_squatter = await asyncio.to_thread(check_studio_port)
+    cfg_servers = _read_config().get("mcpServers", {})
+    if "roblox" in cfg_servers:
+        await asyncio.to_thread(_kill_orphan_studio_mcp)
+        killed_squatter = await asyncio.to_thread(check_studio_port)
+    else:
+        killed_squatter = False
     mgr.load_config()
 
     # Shared "we already told the user the corrective step" flag. Two producers
@@ -2987,7 +2991,7 @@ async def main():
         if roblox_client is not None and (roblox_total == 0 or _st["app"] is False):
             if not is_studio_proc:
                 # Studio is closed: bridge runs 100% cleanly for Hermes and all other tools without nagging
-                log(f"ready {total} tools available ({len(mgr.clients)} MCP servers) - Roblox Studio in standby (optional)", "gr")
+                log(f"ready {total} tools available ({len(mgr.clients)} MCP servers) - Agente Autónomo Listo", "gr")
             elif killed_squatter or reclaimed_zombie or _guidance_shown["v"]:
                 log("    still waiting for you to toggle Studio's MCP server "
                     "(see the action box above)...", "yl")
@@ -3006,7 +3010,7 @@ async def main():
         elif _st["app"] is True:
             log(f"ready {total} tools available - Roblox Studio connected", "gr")
         else:
-            log(f"ready {total} tools available ({len(mgr.clients)} MCP server(s))", "gr")
+            log(f"ready {total} tools available ({len(mgr.clients)} MCP servers) - Agente Autónomo Listo", "gr")
         asyncio.create_task(_supervised(
             "studio_watch", lambda: studio_watch(_st["app"], _st["place"])))
 
