@@ -8,17 +8,8 @@ metadata:
   hermes:
     tags: [motion, animation, spring-physics, micro-interactions, ui, timing, transitions]
     related_skills: [taste-skill, impeccable-design, claude-design]
-triggers:
-  - animación
-  - micro-interacción
-  - motion
-  - transición
-  - hover
-  - spring physics
-  - framer motion
-  - timing
-  - easing
 ---
+
 # Emil Kowalski: Motion & Micro-Interactions Framework
 
 Use this skill when implementing animations, transitions, hovers, loaders, modals, drawers, toasts, or state morphing in any web application.

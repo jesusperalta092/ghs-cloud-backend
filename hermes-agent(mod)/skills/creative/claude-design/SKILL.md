@@ -9,15 +9,8 @@ metadata:
   hermes:
     tags: [design, html, prototype, ux, ui, creative, artifact, deck, motion, design-system]
     related_skills: [design-md, popular-web-designs, excalidraw, architecture-diagram]
-triggers:
-  - artefacto HTML
-  - landing HTML
-  - prototipo HTML
-  - deck
-  - presentación HTML
-  - one-off HTML
-  - prototipo web
 ---
+
 # Claude Design for CLI/API Agents
 
 Use this skill when the user asks for design work that would normally fit Claude Design, but the agent is running in a CLI/API environment instead of the hosted Claude Design web UI.

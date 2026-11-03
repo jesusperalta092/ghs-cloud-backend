@@ -8,19 +8,8 @@ metadata:
   hermes:
     tags: [design, spacing, typography, impeccable, layout, design-system, accessibility]
     related_skills: [taste-skill, emil-motion, claude-design]
-triggers:
-  - diseño profesional
-  - diseñar UI
-  - sistema de diseño
-  - espaciado
-  - tipografía
-  - layout
-  - jerarquía visual
-  - WCAG
-  - impeccable
-  - pulir diseño
-  - mejorar diseño
 ---
+
 # Impeccable Design: Deterministic System & Linter Rules
 
 Use this skill to enforce mathematical cleanliness, layout cohesion, and typographic harmony across all user interfaces created by Hermes.

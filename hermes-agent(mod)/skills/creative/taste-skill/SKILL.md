@@ -8,18 +8,8 @@ metadata:
   hermes:
     tags: [design, taste, anti-slop, frontend, creative, ui, direction, aesthetics]
     related_skills: [emil-motion, impeccable-design, claude-design, popular-web-designs]
-triggers:
-  - diseño genérico
-  - diseño feo
-  - diseño aburrido
-  - sabor IA
-  - anti-slop
-  - taste
-  - criterio estético
-  - dirección de arte
-  - evitar diseño IA
-  - no genérico
 ---
+
 # Taste Skill: Anti-Slop Frontend Aesthetics
 
 Use this skill when designing, building, or refactoring user interfaces, landing pages, web applications, dashboards, or interactive components. This skill directly counteracts the generic, predictable "AI slop" aesthetic by enforcing human design intentionality, aesthetic judgment, and tailored visual hierarchy.
