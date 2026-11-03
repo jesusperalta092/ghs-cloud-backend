@@ -24,13 +24,6 @@ except Exception:
     psutil = None
 from typing import Dict, Any, List, Optional
 
-import os
-# Fix para Render: buscar skills y memoria en la misma carpeta del proyecto
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-os.environ["HERMES_HOME"] = os.path.join(BASE_DIR, 'hermes-agent(mod)')
-os.environ["GHS_MEMORY_DIR"] = os.path.join(BASE_DIR, 'memory')
-
-
 # Ensure standard I/O handles are UTF-8 without buffer issues
 try:
     if hasattr(sys.stdout, "reconfigure"):
@@ -69,12 +62,24 @@ except Exception:
 # ─────────────────────────────────────────────────────────────────────────────
 # Hermes Agent Native Integration (hermes-agent(mod))
 # ─────────────────────────────────────────────────────────────────────────────
-MOD_DIR = os.path.join(os.path.dirname(__file__), "hermes-agent(mod)")
+candidate_dirs = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "hermes-agent(mod)"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "2-BACKEND-NUBE-RENDER", "hermes-agent(mod)"),
+    r"C:\Users\USER\Downloads\GHS-Script-Free\hermes-agent(mod)",
+    r"C:\Users\USER\Downloads\GHS-Proyecto-Final\hermes-agent(mod)",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "hermes", "hermes-agent(mod)"),
+]
+MOD_DIR = None
+for cd in candidate_dirs:
+    if os.path.exists(cd):
+        MOD_DIR = cd
+        break
+
 HERMES_NATIVE_AVAILABLE = False
 _handle_function_call = None
 _hermes_registry = None
 
-if os.path.exists(MOD_DIR):
+if MOD_DIR and os.path.exists(MOD_DIR):
     if MOD_DIR not in sys.path:
         sys.path.insert(0, MOD_DIR)
     try:
@@ -84,13 +89,25 @@ if os.path.exists(MOD_DIR):
         _handle_function_call = handle_function_call
         _hermes_registry = registry
         HERMES_NATIVE_AVAILABLE = True
-        sys.stderr.write(f"[hermes-mcp] Loaded {len(registry._tools)} native Hermes tools from hermes-agent(mod)\n")
+        sys.stderr.write(f"[hermes-mcp] Loaded {len(registry._tools)} native Hermes tools from hermes-agent(mod) [{MOD_DIR}]\n")
         sys.stderr.flush()
     except Exception as e:
         sys.stderr.write(f"[hermes-mcp] Warning: Could not load native hermes-agent(mod): {e}\n")
         sys.stderr.flush()
 
-# SQLite Memory Setup
+# ── RESOLUCION DINAMICA DE DIRECTORIOS HERMES (WINDOWS & LINUX/RENDER) ──
+def get_hermes_base_dir() -> str:
+    if sys.platform == "win32":
+        local_app = os.environ.get("LOCALAPPDATA")
+        if local_app:
+            return os.path.join(local_app, "hermes")
+        return os.path.join(os.environ.get("USERPROFILE", os.path.expanduser("~")), "AppData", "Local", "hermes")
+    else:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if os.path.exists(os.path.join(here, "memory")):
+            return here
+        return os.path.join(os.path.expanduser("~"), ".hermes")
+
 
 # ── CIFRADO / DESCIFRADO TRANSPARENTE DE MEMORIA (Fernet AES) ──
 GHS_DEFAULT_MEM_KEY = b'zF-6ZHe9Og1bnZjvo5tl_p7Lz8szWIyUfL0A3Pe7uUU='
@@ -129,21 +146,13 @@ def get_memory_dir() -> str:
     proj_mem = os.path.join(here, "memory")
     if os.path.exists(proj_mem):
         return proj_mem
-    if os.name == "nt":
-        local_app = os.environ.get("LOCALAPPDATA")
-        if local_app:
-            return os.path.join(local_app, "hermes", "memory")
-    d = os.path.join(os.path.expanduser("~"), ".hermes", "memory")
+    b = get_hermes_base_dir()
+    d = os.path.join(b, "memory")
     os.makedirs(d, exist_ok=True)
     return d
 
-if os.name == 'nt':
-    MEMORY_DB_PATH = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "ghs_memory.db")
-else:
-    MEMORY_DB_PATH = os.path.join(os.path.dirname(__file__), "memory", "ghs_memory.db")
-
-# ── HABILITADOR DINAMICO DE SKILLS ──
-SKILLS_DIR = os.path.join(os.environ.get("LOCALAPPDATA", "."), "hermes", "skills")
+MEMORY_DB_PATH = os.path.join(get_hermes_base_dir(), "ghs_memory.db")
+SKILLS_DIR = os.path.join(get_hermes_base_dir(), "skills")
 DISABLED_SKILLS_FILE = os.path.join(SKILLS_DIR, "disabled_skills.json")
 
 def get_disabled_skills():
@@ -1064,19 +1073,60 @@ def _tool_ui_inspect(arguments: Dict[str, Any]) -> Dict[str, Any]:
     device = arguments.get("device", "desktop").lower()
     scroll_y_raw = arguments.get("scroll_y", 0)
 
+    # Normalize file URLs or local HTML paths
+    if url:
+        clean_url = url.strip().strip("'\"")
+        if clean_url.endswith(".html") or clean_url.endswith(".htm") or os.path.isfile(clean_url):
+            url = "file:///" + os.path.abspath(clean_url).replace("\\", "/")
+        elif not clean_url.startswith("http://") and not clean_url.startswith("https://") and not clean_url.startswith("file://"):
+            if os.path.isfile(clean_url):
+                url = "file:///" + os.path.abspath(clean_url).replace("\\", "/")
+
     # Auto-detect local dev server if url is omitted or localhost
-    if not url:
+    if not url or url.startswith("http://localhost:5173"):
+        server_found = False
         for port in [5173, 3000, 4173, 8080, 8000]:
             try:
                 import urllib.request
-                with urllib.request.urlopen(f"http://localhost:{port}", timeout=1) as resp:
+                with urllib.request.urlopen(f"http://localhost:{port}", timeout=0.6) as resp:
                     if resp.status == 200:
                         url = f"http://localhost:{port}"
+                        server_found = True
                         break
             except Exception:
                 pass
-        if not url:
-            url = "http://localhost:5173"
+
+        # If no local port is active, look for recent index.html in Downloads or workspace
+        if not server_found:
+            downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+            recent_html = None
+            recent_time = 0
+            try:
+                candidates = []
+                if os.path.isdir(downloads):
+                    for entry in os.scandir(downloads):
+                        if entry.is_dir() and not entry.name.startswith((".", "node_modules", "GHS-Script-Free")):
+                            sub_idx = os.path.join(entry.path, "index.html")
+                            if os.path.isfile(sub_idx):
+                                candidates.append(sub_idx)
+                    root_idx = os.path.join(downloads, "index.html")
+                    if os.path.isfile(root_idx):
+                        candidates.append(root_idx)
+                for cand in candidates:
+                    try:
+                        mtime = os.path.getmtime(cand)
+                        if mtime > recent_time:
+                            recent_time = mtime
+                            recent_html = cand
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            if recent_html and (time.time() - recent_time) < 7200:
+                url = "file:///" + os.path.abspath(recent_html).replace("\\", "/")
+            elif not url:
+                url = "http://localhost:5173"
 
     # Device viewports
     devices = {
@@ -1094,7 +1144,7 @@ def _tool_ui_inspect(arguments: Dict[str, Any]) -> Dict[str, Any]:
     width, height = viewport_width, viewport_height
 
     # Primary method: Chrome / Edge Headless with full resolution & zero-cache
-    if url and url.startswith("http"):
+    if url and (url.startswith("http://") or url.startswith("https://") or url.startswith("file://")):
         browser_candidates = [
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
@@ -1213,55 +1263,16 @@ def _tool_ui_inspect(arguments: Dict[str, Any]) -> Dict[str, Any]:
                         shutil.rmtree(temp_profile, ignore_errors=True)
                     except Exception:
                         pass
-
-    if not img_bytes and mss is not None:
-        try:
-            with mss.mss() as sct:
-                monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-                sct_img = sct.grab(monitor)
-                width, height = sct_img.width, sct_img.height
-                if Image is not None:
-                    img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG", optimize=True)
-                    img_bytes = buf.getvalue()
-        except Exception:
-            pass
-
-    if not img_bytes and pyautogui is not None:
-        try:
-            shot = pyautogui.screenshot()
-            width, height = shot.size
-            buf = io.BytesIO()
-            shot.save(buf, format="PNG")
-            img_bytes = buf.getvalue()
-        except Exception:
-            pass
-
-    if not img_bytes and ImageGrab is not None:
-        try:
-            shot = ImageGrab.grab()
-            width, height = shot.size
-            buf = io.BytesIO()
-            shot.save(buf, format="PNG")
-            img_bytes = buf.getvalue()
-        except Exception:
-            pass
-
-    # Fallback card if all display capture fails
-    if not img_bytes and Image is not None and ImageDraw is not None:
-        try:
-            width, height = 1280, 720
-            canvas = Image.new("RGB", (width, height), color=(15, 23, 42))
-            draw = ImageDraw.Draw(canvas)
-            draw.rectangle([(20, 20), (width - 20, height - 20)], outline=(139, 92, 246), width=3)
-            draw.text((50, 50), "GHS Visual Inspector [Live Snapshot]", fill=(244, 114, 182))
-            draw.text((50, 120), f"Target URL: {url}", fill=(248, 250, 252))
-            buf = io.BytesIO()
-            canvas.save(buf, format="PNG")
-            img_bytes = buf.getvalue()
-        except Exception:
-            pass
+    if not img_bytes:
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Error en hermes_ui_inspect: No se pudo conectar a '{url}' ni renderizar la página con Chrome Headless.\n• Si es un proyecto React/Vite, asegúrate de haber ejecutado 'npm run dev' con hermes_terminal (is_daemon: true) en el puerto 5173.\n• Si es un archivo HTML estático, especifica la ruta del archivo (ej: 'index.html')."
+                }
+            ],
+            "isError": True
+        }
 
     if img_bytes:
         save_path_msg = ""
@@ -1578,11 +1589,20 @@ def _tool_terminal(arguments: Dict[str, Any]) -> Dict[str, Any]:
             cmd_stripped = command.strip()
             lowered = cmd_stripped.lower()
 
+        # Auto-heal single-quoted cd commands in Windows CMD (e.g. cd 'C:\...' -> cd /d "C:\...")
+        command = re.sub(r"\bcd(?:\s+/d)?\s+'([^']+)'", r'cd /d "\1"', command, flags=re.IGNORECASE)
+        def _norm_cd_path(m):
+            return f'cd /d "{m.group(1).replace("/", chr(92))}"'
+        command = re.sub(r'\bcd\s+/d\s+"([a-zA-Z]:[^"]+)"', _norm_cd_path, command, flags=re.IGNORECASE)
+        cmd_stripped = command.strip()
+        lowered = cmd_stripped.lower()
+
         # 2. If command is a bare PowerShell cmdlet or starts with $ (PowerShell variable/expression)
         ps_cmdlets = (
             "new-item", "get-item", "remove-item", "copy-item", "move-item", "set-item",
             "get-childitem", "test-path", "start-process", "stop-process", "set-content",
-            "get-content", "add-content", "clear-content"
+            "get-content", "add-content", "clear-content", "set-location", "select-object",
+            "where-object", "format-list", "format-table", "measure-object", "out-string"
         )
         if cmd_stripped.startswith("$") or any(lowered.startswith(cmdlet + " ") or lowered == cmdlet for cmdlet in ps_cmdlets):
             if not lowered.startswith("powershell"):
@@ -2078,6 +2098,65 @@ def _tool_file_write(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"content": [{"type": "text", "text": f"Error al escribir archivo en '{target_path}': {e}"}], "isError": True}
 
 
+def _tool_batch_scaffold(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Crea múltiples archivos de andamiaje o configuración (boilerplate)
+    de forma atómica, validando sintaxis JSON antes de escribir en disco.
+    Reduce drásticamente el lag y el consumo de tokens en proyectos nuevos.
+    """
+    root_dir = arguments.get("root") or arguments.get("root_dir") or arguments.get("project_dir") or ""
+    files = arguments.get("files") or arguments.get("bundle") or {}
+
+    if not files:
+        return {"content": [{"type": "text", "text": "Error: 'files' es requerido (diccionario de {ruta: contenido})."}], "isError": True}
+
+    file_map = {}
+    if isinstance(files, dict):
+        file_map = files
+    elif isinstance(files, list):
+        for item in files:
+            if isinstance(item, dict) and "path" in item and "content" in item:
+                file_map[item["path"]] = item["content"]
+
+    if not file_map:
+        return {"content": [{"type": "text", "text": "Error: 'files' debe ser un diccionario con al menos un archivo."}], "isError": True}
+
+    # Pre-flight check: validate JSON files before touching disk
+    validation_errors = []
+    for rel_path, content in file_map.items():
+        if rel_path.lower().endswith(".json"):
+            try:
+                json.loads(content)
+            except Exception as e:
+                validation_errors.append(f"JSON inválido en '{rel_path}': {e}")
+
+    if validation_errors:
+        err_msg = "Error de validación pre-vuelo en hermes_batch_scaffold (abortado antes de escribir en disco):\n- " + "\n- ".join(validation_errors)
+        return {"content": [{"type": "text", "text": err_msg}], "isError": True}
+
+    # Atomic write
+    created_files = []
+    total_bytes = 0
+    try:
+        for rel_path, content in file_map.items():
+            full_path = os.path.join(root_dir, rel_path) if root_dir else rel_path
+            target_path = resolve_target_path(full_path)
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            content_str = str(content) if not isinstance(content, str) else content
+            with open(target_path, "w", encoding="utf-8", errors="replace") as f:
+                f.write(content_str)
+            created_files.append(f"{os.path.basename(target_path)} ({len(content_str)} B)")
+            total_bytes += len(content_str)
+
+        summary = (
+            f"✓ Scaffolding por lote completado con éxito: {len(created_files)} archivos creados "
+            f"({total_bytes} bytes totales):\n  • " + "\n  • ".join(created_files)
+        )
+        return {"content": [{"type": "text", "text": summary}]}
+    except Exception as e:
+        return {"content": [{"type": "text", "text": f"Error durante hermes_batch_scaffold: {e}"}], "isError": True}
+
+
 def _tool_file_patch(arguments: Dict[str, Any]) -> Dict[str, Any]:
     raw_path = (arguments.get("path") or arguments.get("filepath") or 
                 arguments.get("file_path") or arguments.get("target_path") or 
@@ -2223,7 +2302,12 @@ def _tool_memory(arguments: Dict[str, Any]) -> Dict[str, Any]:
                     parts.append(f"=== {fname} ===" + nl + f"[error leyendo: {e}]")
             else:
                 parts.append(f"=== {fname} ===" + nl + "[no existe aun]")
-        return {"content": [{"type": "text", "text": dnl.join(parts)}]}
+        full_text = dnl.join(parts)
+        import re
+        full_text = re.sub(r'[A-Za-z]:\\[Uu]sers\\[^\\]+', '~', full_text)
+        full_text = re.sub(r'/home/[^/]+', '~', full_text)
+        full_text = re.sub(r':(17613|17614|9876)\b', ':*****', full_text)
+        return {"content": [{"type": "text", "text": full_text}]}
     try:
         with sqlite3.connect(MEMORY_DB_PATH) as conn:
             cursor = conn.cursor()
@@ -2840,6 +2924,18 @@ TOOLS = [
         }
     },
     {
+        "name": "hermes_batch_scaffold",
+        "description": "Crea múltiples archivos de andamiaje o configuración (boilerplate) en un solo turno de forma atómica y valida sintaxis JSON antes de escribir en disco.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "root": {"type": "string", "description": "Carpeta raíz o del proyecto (opcional)."},
+                "files": {"type": "object", "description": "Diccionario de rutas relativas y contenidos {'package.json': '...', 'vite.config.ts': '...'}"}
+            },
+            "required": ["files"]
+        }
+    },
+    {
         "name": "hermes_toggle_skill",
         "description": "Activa o desactiva una skill en disabled_skills.json. Las skills desactivadas no aparecen en hermes_skills_list.",
         "inputSchema": {
@@ -3199,17 +3295,19 @@ def main():
                 pass
 
             elif method == "tools/list":
-                combined_tools = list(TOOLS)
+                all_tools = list(TOOLS)
                 if HERMES_NATIVE_AVAILABLE and _hermes_registry is not None:
-                    for name, entry in _hermes_registry._tools.items():
-                        if not any(t.get("name") == name for t in combined_tools):
-                            schema = dict(entry.schema)
-                            schema["name"] = name
-                            schema["description"] = entry.description or ""
-                            if "parameters" in schema:
-                                schema["inputSchema"] = schema.pop("parameters")
-                            combined_tools.append(schema)
-                send_response(rid, {"tools": combined_tools})
+                    for tname, t in _hermes_registry._tools.items():
+                        if not any(x.get("name") == tname for x in all_tools):
+                            schema = getattr(t, "parameters", None) or getattr(t, "input_schema", None)
+                            if not schema or not isinstance(schema, dict):
+                                schema = {"type": "object", "properties": {}}
+                            all_tools.append({
+                                "name": tname,
+                                "description": (getattr(t, "description", "") or f"Nous Hermes tool: {tname}").split("\n")[0][:140],
+                                "inputSchema": schema
+                            })
+                send_response(rid, {"tools": all_tools})
 
             elif method == "tools/call":
                 name = params.get("name")
@@ -3239,6 +3337,8 @@ def main():
                     res = _tool_file_write(args)
                 elif name in ("hermes_file_patch", "hermes_patch"):
                     res = _tool_file_patch(args)
+                elif name in ("hermes_batch_scaffold", "hermes_bundle_write"):
+                    res = _tool_batch_scaffold(args)
                 elif name == "hermes_toggle_skill":
                     res = _tool_toggle_skill(args)
                 elif name == "hermes_memory":
@@ -3261,6 +3361,8 @@ def main():
                     res = _tool_android_build_apk(args)
                 elif name == "android_install_adb":
                     res = _tool_android_install_adb(args)
+                elif HERMES_NATIVE_AVAILABLE and _hermes_registry is not None and name in _hermes_registry._tools:
+                    res = _tool_native_dispatch(name, args)
                 else:
                     send_response(rid, error={"code": -32601, "message": f"Tool '{name}' not found."})
                     continue

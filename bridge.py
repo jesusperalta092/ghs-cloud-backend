@@ -89,7 +89,7 @@ HOST = os.environ.get("ZS_BRIDGE_HOST", "0.0.0.0")
 # Keep in sync with ghs-extension/manifest.json "version" - printed at
 # startup so a user's terminal output alone tells us which build they're on.
 BRIDGE_VERSION = "1.5.5"
-PORT = int(os.environ.get("PORT", "17613"))
+PORT = int(os.environ.get("ZS_BRIDGE_PORT", "17613"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
 os.environ["GHS_BRIDGE_PID"] = str(os.getpid())
@@ -479,7 +479,7 @@ def _reclaim_bridge_port():
     relaunches start.bat while an earlier bridge.py is still running - window
     closed with the X instead of Ctrl+C, a previous crash that left a detached
     python, or a double double-click. The old process still holds the port, so
-    websockets.serve(, process_request=process_request) dies on bind with a cryptic (localised) OSError and the
+    websockets.serve() dies on bind with a cryptic (localised) OSError and the
     whole bridge exits code 1.
 
     We reuse _port_owner (already generic over the port) and only ever kill a
@@ -839,16 +839,12 @@ class MCPClient:
             # On Windows, npx/npm/yarn/pnpm/bunx are .cmd shims that Popen can't
             # launch directly (WinError 2). Run them through cmd.exe so any
             # node-based MCP server "just works" from config.json.
-            base = os.path.basename(cmd[0]).lower()
             if sys.platform == "win32":
+                base = os.path.basename(cmd[0]).lower()
                 stem = base.split(".")[0]
                 if stem in ("npx", "npm", "yarn", "pnpm", "bunx") or base.endswith((".cmd", ".bat")):
                     if cmd[0].lower() not in ("cmd.exe", "cmd"):
                         cmd = ["cmd.exe", "/c"] + cmd
-            else:
-                # En Linux/Mac, si el usuario puso npx.cmd, lo limpiamos
-                if cmd[0].endswith(".cmd"):
-                    cmd[0] = cmd[0].replace(".cmd", "")
             env = dict(os.environ)
             for k, v in self.env.items():
                 env[k] = self._resolve(v)
@@ -2846,27 +2842,6 @@ async def _supervised(name, coro_factory):
             await asyncio.sleep(5)
 
 
-
-# ── HEALTH CHECK & KEEP-ALIVE PARA RENDER / CLOUD ──
-def process_request(*args, **kwargs):
-    """Universal handler for HTTP requests hitting the WebSocket port on Render.
-    Supports both websockets >= 13 (connection, request) and websockets < 13 (path, headers).
-    """
-    import http
-    if len(args) == 2:
-        arg1, arg2 = args
-        if hasattr(arg1, "respond"):
-            conn, req = arg1, arg2
-            if req.headers.get("Upgrade", "").lower() == "websocket":
-                return None
-            return conn.respond(http.HTTPStatus.OK, "GHS Cloud Backend is alive\n")
-        else:
-            path, headers = arg1, arg2
-            if headers.get("Upgrade", "").lower() == "websocket":
-                return None
-            return (http.HTTPStatus.OK, [("Content-Type", "text/plain; charset=utf-8"), ("Access-Control-Allow-Origin", "*")], b"GHS Cloud Backend is alive\n")
-    return None
-
 async def main():
     print(f"\n{C['cy']}  GHS Bridge v{BRIDGE_VERSION}{C['reset']}  {C['dim']}- Agente Autónomo - ws://{HOST}:{PORT}{C['reset']}\n")
     log(f"===== BRIDGE START  v{BRIDGE_VERSION}  pid={os.getpid()}  log={LOG_PATH} =====", "cy")
@@ -3041,7 +3016,7 @@ async def main():
     try:
         server_ctx = await websockets.serve(
             handler, HOST, PORT, ping_interval=20, ping_timeout=20,
-            max_size=16 * 1024 * 1024, process_request=process_request)
+            max_size=16 * 1024 * 1024)
     except OSError as e:
         # errno 10048 (Win) / EADDRINUSE: something we could NOT auto-kill still
         # owns the port - another app, or a python whose cmdline we couldn't read.
